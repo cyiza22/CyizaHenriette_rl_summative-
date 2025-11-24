@@ -93,11 +93,17 @@ CyizaHenriette_rl_summative-/
 
 
 git clone https://github.com/cyiza22/CyizaHenriette_rl_summative.git
+
 cd CyizaHenriette_rl_summative
+
 python -m venv venv
+
 venv\Scripts\activate       # Windows
+
 # or
+
 source venv/bin/activate    # Mac/Linux
+
 pip install -r requirements.txt
 
 
