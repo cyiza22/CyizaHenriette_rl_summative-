@@ -18,53 +18,81 @@ plt.rcParams['font.size'] = 10
 def load_metrics(algorithm):
     """Load all metrics for a given algorithm."""
     results_dir = Path(f"results/{algorithm}")
+    
+    if not results_dir.exists():
+        return []
+    
     metrics_list = []
     
     for file in results_dir.glob("*_metrics.json"):
-        with open(file, 'r') as f:
-            metrics = json.load(f)
-            metrics['run_name'] = file.stem.replace('_metrics', '')
-            metrics_list.append(metrics)
+        try:
+            with open(file, 'r') as f:
+                metrics = json.load(f)
+                metrics['run_name'] = file.stem.replace('_metrics', '')
+                metrics_list.append(metrics)
+        except Exception as e:
+            print(f"Error loading {file}: {e}")
     
     return metrics_list
 
 def plot_cumulative_rewards():
-    """Plot cumulative rewards for all algorithms."""
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle('Cumulative Rewards Across All Algorithms', fontsize=16, fontweight='bold')
+    """Plot cumulative rewards for available algorithms."""
     
-    algorithms = ['dqn', 'reinforce', 'a2c', 'ppo']
-    titles = ['DQN', 'REINFORCE', 'A2C', 'PPO']
+    # Check which algorithms have results
+    available_algos = []
+    algo_names = {'dqn': 'DQN', 'ppo': 'PPO', 'a2c': 'A2C', 'reinforce': 'REINFORCE'}
     
-    for idx, (algo, title) in enumerate(zip(algorithms, titles)):
-        ax = axes[idx // 2, idx % 2]
+    for algo in ['dqn', 'ppo', 'a2c', 'reinforce']:
+        if Path(f"results/{algo}").exists() and list(Path(f"results/{algo}").glob("*_metrics.json")):
+            available_algos.append(algo)
+    
+    if not available_algos:
+        print("No results found!")
+        return
+    
+    num_algos = len(available_algos)
+    fig, axes = plt.subplots(1, num_algos, figsize=(8*num_algos, 6))
+    
+    if num_algos == 1:
+        axes = [axes]
+    
+    fig.suptitle('Cumulative Rewards Across Algorithms', fontsize=16, fontweight='bold')
+    
+    for idx, algo in enumerate(available_algos):
+        ax = axes[idx]
         
         metrics_list = load_metrics(algo)
         
+        if not metrics_list:
+            continue
+        
         # Find best run
-        best_run = max(metrics_list, key=lambda x: x.get('mean_reward', 0))
+        best_run = max(metrics_list, key=lambda x: x.get('mean_coverage', 0))
         
         # Plot rewards
         rewards = best_run.get('episode_rewards', [])
         if rewards:
             # Calculate rolling mean
-            window = min(50, len(rewards) // 10)
-            rolling_mean = np.convolve(rewards, np.ones(window)/window, mode='valid')
+            window = min(50, len(rewards) // 10) if len(rewards) > 10 else 1
+            if window > 1:
+                rolling_mean = np.convolve(rewards, np.ones(window)/window, mode='valid')
+                ax.plot(rewards, alpha=0.3, color='lightblue', label='Episode Reward')
+                ax.plot(range(window-1, len(rewards)), rolling_mean, 
+                       color='darkblue', linewidth=2, label=f'Rolling Mean (window={window})')
+            else:
+                ax.plot(rewards, color='darkblue', linewidth=2, label='Episode Reward')
             
-            ax.plot(rewards, alpha=0.3, color='lightblue', label='Episode Reward')
-            ax.plot(range(window-1, len(rewards)), rolling_mean, 
-                   color='darkblue', linewidth=2, label=f'Rolling Mean (window={window})')
-            
-            ax.set_title(f'{title} - Best Configuration: {best_run["run_name"]}', 
+            ax.set_title(f'{algo_names[algo]} - Best: {best_run["run_name"]}', 
                         fontweight='bold')
             ax.set_xlabel('Episode')
             ax.set_ylabel('Cumulative Reward')
             ax.legend()
             ax.grid(True, alpha=0.3)
             
-            # Add mean reward text
+            # Add metrics text
             mean_reward = best_run.get('mean_reward', 0)
-            ax.text(0.02, 0.98, f'Mean Reward: {mean_reward:.2f}', 
+            mean_coverage = best_run.get('mean_coverage', 0)
+            ax.text(0.02, 0.98, f'Mean Reward: {mean_reward:.2f}\nCoverage: {mean_coverage:.1%}', 
                    transform=ax.transAxes, verticalalignment='top',
                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
     
@@ -74,25 +102,41 @@ def plot_cumulative_rewards():
     plt.close()
 
 def plot_algorithm_comparison():
-    """Compare best runs from each algorithm."""
+    """Compare best runs from each available algorithm."""
+    
+    # Check which algorithms have results
+    available_algos = []
+    for algo in ['dqn', 'ppo', 'a2c', 'reinforce']:
+        if Path(f"results/{algo}").exists() and list(Path(f"results/{algo}").glob("*_metrics.json")):
+            available_algos.append(algo)
+    
+    if not available_algos:
+        print("No results found!")
+        return
+    
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     
-    algorithms = ['dqn', 'reinforce', 'a2c', 'ppo']
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+    colors = {'dqn': '#FF6B6B', 'reinforce': '#4ECDC4', 'a2c': '#45B7D1', 'ppo': '#96CEB4'}
     
     # Collect best runs
     best_runs = {}
-    for algo in algorithms:
+    for algo in available_algos:
         metrics_list = load_metrics(algo)
-        best_run = max(metrics_list, key=lambda x: x.get('mean_reward', 0))
-        best_runs[algo] = best_run
+        if metrics_list:
+            best_run = max(metrics_list, key=lambda x: x.get('mean_coverage', 0))
+            best_runs[algo] = best_run
+    
+    if not best_runs:
+        print("No valid results found!")
+        return
     
     # Plot 1: Mean Reward Comparison
     ax1 = axes[0]
-    algos_upper = [a.upper() for a in algorithms]
-    mean_rewards = [best_runs[a].get('mean_reward', 0) for a in algorithms]
+    algos_upper = [a.upper() for a in best_runs.keys()]
+    mean_rewards = [best_runs[a].get('mean_reward', 0) for a in best_runs.keys()]
+    bar_colors = [colors.get(a, '#999999') for a in best_runs.keys()]
     
-    bars = ax1.bar(algos_upper, mean_rewards, color=colors, edgecolor='black', linewidth=1.5)
+    bars = ax1.bar(algos_upper, mean_rewards, color=bar_colors, edgecolor='black', linewidth=1.5)
     ax1.set_title('Mean Reward Comparison (Best Configuration per Algorithm)', 
                  fontsize=14, fontweight='bold')
     ax1.set_ylabel('Mean Reward (Last 100 Episodes)', fontsize=12)
@@ -103,14 +147,14 @@ def plot_algorithm_comparison():
     for bar, reward in zip(bars, mean_rewards):
         height = bar.get_height()
         ax1.text(bar.get_x() + bar.get_width()/2., height,
-                f'{reward:.1f}',
+                f'{reward:.0f}',
                 ha='center', va='bottom', fontweight='bold')
     
     # Plot 2: Coverage Rate Comparison
     ax2 = axes[1]
-    coverage_rates = [best_runs[a].get('mean_coverage', 0) * 100 for a in algorithms]
+    coverage_rates = [best_runs[a].get('mean_coverage', 0) * 100 for a in best_runs.keys()]
     
-    bars = ax2.bar(algos_upper, coverage_rates, color=colors, edgecolor='black', linewidth=1.5)
+    bars = ax2.bar(algos_upper, coverage_rates, color=bar_colors, edgecolor='black', linewidth=1.5)
     ax2.set_title('Mean Coverage Rate Comparison', fontsize=14, fontweight='bold')
     ax2.set_ylabel('Mean Coverage Rate (%)', fontsize=12)
     ax2.set_xlabel('Algorithm', fontsize=12)
@@ -131,24 +175,35 @@ def plot_algorithm_comparison():
 
 def plot_convergence():
     """Plot episodes to convergence for each algorithm."""
+    
+    available_algos = []
+    for algo in ['dqn', 'ppo', 'a2c', 'reinforce']:
+        if Path(f"results/{algo}").exists() and list(Path(f"results/{algo}").glob("*_metrics.json")):
+            available_algos.append(algo)
+    
+    if not available_algos:
+        return
+    
     fig, ax = plt.subplots(figsize=(12, 8))
     
-    algorithms = ['dqn', 'reinforce', 'a2c', 'ppo']
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4']
+    colors = {'dqn': '#FF6B6B', 'reinforce': '#4ECDC4', 'a2c': '#45B7D1', 'ppo': '#96CEB4'}
     
-    for algo, color in zip(algorithms, colors):
+    for algo in available_algos:
         metrics_list = load_metrics(algo)
-        best_run = max(metrics_list, key=lambda x: x.get('mean_reward', 0))
+        if not metrics_list:
+            continue
+            
+        best_run = max(metrics_list, key=lambda x: x.get('mean_coverage', 0))
         
         rewards = best_run.get('episode_rewards', [])
-        if rewards:
+        if len(rewards) > 100:
             # Calculate rolling mean
             window = 100
             rolling_mean = np.convolve(rewards, np.ones(window)/window, mode='valid')
             
             ax.plot(range(window-1, len(rewards)), rolling_mean, 
                    label=f'{algo.upper()} ({best_run["run_name"]})',
-                   linewidth=2, color=color)
+                   linewidth=2, color=colors.get(algo, '#999999'))
     
     ax.set_title('Convergence Comparison (Rolling Mean Over 100 Episodes)', 
                 fontsize=14, fontweight='bold')
@@ -162,45 +217,16 @@ def plot_convergence():
     print("Saved: plots/convergence_comparison.png")
     plt.close()
 
-def plot_hyperparameter_sensitivity(algorithm='ppo'):
-    """Plot hyperparameter sensitivity for a specific algorithm."""
-    metrics_list = load_metrics(algorithm)
-    
-    if algorithm == 'ppo':
-        # Extract learning rates and rewards
-        lr_configs = [(m['learning_rate'], m['mean_reward'], m['run_name']) 
-                     for m in metrics_list if 'lr' in m['run_name'].lower()]
-        
-        if lr_configs:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            
-            lrs = [c[0] for c in lr_configs]
-            rewards = [c[1] for c in lr_configs]
-            names = [c[2] for c in lr_configs]
-            
-            ax.scatter(lrs, rewards, s=100, c='darkblue', edgecolor='black', linewidth=1.5)
-            
-            for lr, reward, name in zip(lrs, rewards, names):
-                ax.annotate(name, (lr, reward), xytext=(5, 5), 
-                           textcoords='offset points', fontsize=8)
-            
-            ax.set_title(f'PPO Learning Rate Sensitivity', fontsize=14, fontweight='bold')
-            ax.set_xlabel('Learning Rate', fontsize=12)
-            ax.set_ylabel('Mean Reward', fontsize=12)
-            ax.set_xscale('log')
-            ax.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
-            plt.savefig('plots/ppo_lr_sensitivity.png', dpi=300, bbox_inches='tight')
-            print("Saved: plots/ppo_lr_sensitivity.png")
-            plt.close()
-
 def generate_summary_table():
     """Generate a summary table of all experiments."""
-    algorithms = ['dqn', 'reinforce', 'a2c', 'ppo']
+    
+    available_algos = []
+    for algo in ['dqn', 'ppo', 'a2c', 'reinforce']:
+        if Path(f"results/{algo}").exists() and list(Path(f"results/{algo}").glob("*_metrics.json")):
+            available_algos.append(algo)
     
     summary = []
-    for algo in algorithms:
+    for algo in available_algos:
         metrics_list = load_metrics(algo)
         
         for metrics in metrics_list:
@@ -211,8 +237,8 @@ def generate_summary_table():
                 'Mean Coverage': metrics.get('mean_coverage', 0) * 100
             })
     
-    # Sort by mean reward
-    summary.sort(key=lambda x: x['Mean Reward'], reverse=True)
+    # Sort by coverage
+    summary.sort(key=lambda x: x['Mean Coverage'], reverse=True)
     
     # Save to file
     with open('results/summary_table.txt', 'w') as f:
@@ -224,13 +250,16 @@ def generate_summary_table():
     
     print("Saved: results/summary_table.txt")
     
-    # Also print top 5
-    print("\nTop 5 Configurations:")
+    # Also print top 10
+    print("\n" + "="*80)
+    print("TOP 10 CONFIGURATIONS:")
+    print("="*80)
     print(f"{'Algorithm':<12} {'Configuration':<30} {'Mean Reward':<15} {'Coverage %'}")
-    print("="*70)
-    for item in summary[:5]:
+    print("-"*80)
+    for item in summary[:10]:
         print(f"{item['Algorithm']:<12} {item['Configuration']:<30} "
               f"{item['Mean Reward']:<15.2f} {item['Mean Coverage']:.1f}%")
+    print("="*80)
 
 def main():
     """Generate all plots and analysis."""
@@ -244,7 +273,6 @@ def main():
         plot_cumulative_rewards()
         plot_algorithm_comparison()
         plot_convergence()
-        plot_hyperparameter_sensitivity('ppo')
         generate_summary_table()
         
         print("\n" + "="*80)

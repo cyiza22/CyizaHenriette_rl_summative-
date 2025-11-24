@@ -1,0 +1,8 @@
+Algorithm    Configuration                  Mean Reward     Coverage %  
+======================================================================
+PPO          ppo_optimized_1                27637.70        90.7        
+PPO          ppo_optimized_2                20205.95        66.7        
+PPO          ppo_optimized_3                19521.00        65.0        
+DQN          dqn_optimized_1                42757.05        27.0        
+DQN          dqn_optimized_2                40018.60        15.0        
+DQN          dqn_optimized_3                41897.80        5.7         
