@@ -43,7 +43,8 @@ rather than accumulating movement rewards.
 ## **3. Project Structure**
 
 CyizaHenriette_rl_summative-/
-│
+
+
 ├── environment/                    # Custom Gymnasium environment
 
 
