@@ -45,16 +45,38 @@ rather than accumulating movement rewards.
 CyizaHenriette_rl_summative-/
 │
 ├── environment/                    # Custom Gymnasium environment
+
+
 ├── training/                       # DQN and PPO training scripts
+
+
 ├── models/                         # Saved trained models
+
+
 ├── results/                        # Evaluation metrics and summary tables
+
+
 ├── logs/                           # TensorBoard logs
+
+
 ├── plots/                          # Training and comparison visualizations
+
+
 ├── main.py                         # Inference and visualization runner
+
+
 ├── demo_random_agent.py            # Baseline random agent demonstration
+
+
 ├── analyze_results.py              # Automated analysis and plotting
+
+
 ├── check_results.py                # Quick results inspection
+
+
 ├── requirements.txt                # Dependencies
+
+
 └── README.md                       # This documentation
 
 
