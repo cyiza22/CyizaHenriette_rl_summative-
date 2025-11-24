@@ -9,7 +9,6 @@ import json
 import time
 import argparse
 from stable_baselines3 import DQN, PPO, A2C
-import torch
 
 from environment.custom_env import BreastCancerAwarenessEnv
 
@@ -19,7 +18,7 @@ def load_best_model(algorithm='ppo', model_name=None):
     Load the best performing model based on saved metrics.
     
     Args:
-        algorithm: Algorithm type ('dqn', 'ppo', 'a2c', 'reinforce')
+        algorithm: Algorithm type ('dqn', 'ppo', 'a2c')
         model_name: Specific model name to load (optional)
     
     Returns:
@@ -33,23 +32,24 @@ def load_best_model(algorithm='ppo', model_name=None):
         metrics_path = f"{results_dir}/{model_name}_metrics.json"
         model_path = f"models/{algorithm}/{model_name}"
     else:
-        # Find best model based on mean reward
-        best_reward = -float('inf')
+        # Find best model based on mean coverage
+        best_coverage = -float('inf')
         best_model_name = None
         
         for filename in os.listdir(results_dir):
             if filename.endswith('_metrics.json'):
                 with open(os.path.join(results_dir, filename), 'r') as f:
                     metrics = json.load(f)
-                    if metrics['mean_reward'] > best_reward:
-                        best_reward = metrics['mean_reward']
+                    coverage = metrics.get('mean_coverage', 0)
+                    if coverage > best_coverage:
+                        best_coverage = coverage
                         best_model_name = filename.replace('_metrics.json', '')
         
         if best_model_name is None:
             raise ValueError(f"No trained models found for {algorithm}")
         
         print(f"Loading best {algorithm.upper()} model: {best_model_name}")
-        print(f"Mean Reward: {best_reward:.2f}")
+        print(f"Mean Coverage: {best_coverage*100:.1f}%")
         
         metrics_path = f"{results_dir}/{best_model_name}_metrics.json"
         model_path = f"models/{algorithm}/{best_model_name}"
@@ -65,19 +65,6 @@ def load_best_model(algorithm='ppo', model_name=None):
         model = PPO.load(model_path)
     elif algorithm == 'a2c':
         model = A2C.load(model_path)
-    elif algorithm == 'reinforce':
-        # Custom REINFORCE implementation
-        from training.pg_training import REINFORCEPolicy
-        env = BreastCancerAwarenessEnv()
-        obs_dim = env.observation_space.shape[0]
-        act_dim = env.action_space.n
-        
-        policy = REINFORCEPolicy(obs_dim, act_dim)
-        policy.load_state_dict(torch.load(f"{model_path}.pth"))
-        policy.eval()
-        env.close()
-        
-        return policy, metrics
     else:
         raise ValueError(f"Unknown algorithm: {algorithm}")
     
@@ -127,13 +114,7 @@ def run_simulation(algorithm='ppo', model_name=None, num_episodes=5, render=True
         
         while not done:
             # Select action
-            if algorithm == 'reinforce':
-                with torch.no_grad():
-                    state_tensor = torch.FloatTensor(obs).unsqueeze(0)
-                    probs = model(state_tensor)
-                    action = torch.argmax(probs, dim=1).item()
-            else:
-                action, _ = model.predict(obs, deterministic=True)
+            action, _ = model.predict(obs, deterministic=True)
             
             # Take action
             obs, reward, terminated, truncated, info = env.step(action)
@@ -144,22 +125,20 @@ def run_simulation(algorithm='ppo', model_name=None, num_episodes=5, render=True
             
             if render:
                 env.render()
-                time.sleep(0.1)  # Slow down for visibility
+                time.sleep(0.05)  # Slow down for visibility
         
         # Print episode summary
         print(f"Steps: {step_count}")
         print(f"Total Reward: {episode_reward:.2f}")
         print(f"Women Reached: {info['women_reached']}/{info['total_women']}")
         print(f"Coverage Rate: {info['coverage_rate']:.2%}")
-        print(f"Referrals Given: {info['referrals_given']}")
         
         episode_results.append({
             'episode': episode + 1,
             'steps': step_count,
             'reward': episode_reward,
             'women_reached': info['women_reached'],
-            'coverage_rate': info['coverage_rate'],
-            'referrals_given': info['referrals_given']
+            'coverage_rate': info['coverage_rate']
         })
     
     # Print overall summary
@@ -169,12 +148,12 @@ def run_simulation(algorithm='ppo', model_name=None, num_episodes=5, render=True
     avg_reward = sum(r['reward'] for r in episode_results) / num_episodes
     avg_coverage = sum(r['coverage_rate'] for r in episode_results) / num_episodes
     avg_steps = sum(r['steps'] for r in episode_results) / num_episodes
-    avg_referrals = sum(r['referrals_given'] for r in episode_results) / num_episodes
+    total_women = sum(r['women_reached'] for r in episode_results)
     
     print(f"Average Reward: {avg_reward:.2f}")
     print(f"Average Coverage: {avg_coverage:.2%}")
     print(f"Average Steps: {avg_steps:.1f}")
-    print(f"Average Referrals: {avg_referrals:.1f}")
+    print(f"Total Women Reached: {total_women}/{num_episodes * 3}")
     print(f"{'='*80}\n")
     
     env.close()
@@ -185,7 +164,7 @@ def run_simulation(algorithm='ppo', model_name=None, num_episodes=5, render=True
 def main():
     parser = argparse.ArgumentParser(description='Run trained RL agent for Breast Cancer Awareness')
     parser.add_argument('--algorithm', type=str, default='ppo', 
-                       choices=['dqn', 'ppo', 'a2c', 'reinforce'],
+                       choices=['dqn', 'ppo', 'a2c'],
                        help='Algorithm to use')
     parser.add_argument('--model', type=str, default=None,
                        help='Specific model name to load')
